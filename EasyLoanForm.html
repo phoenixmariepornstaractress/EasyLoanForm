@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Application Form</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        #employerNameContainer {
+            display: none;
+        }
+        #preview span {
+            display: inline-block;
+            margin-right: 10px;
+        }
+        #preview img {
+            width: 50px;
+            height: 50px;
+        }
+        .progress-bar {
+            height: 20px;
+            background-color: #ccc;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        .progress-bar div {
+            height: 100%;
+            background-color: #007BFF;
+            width: 0;
+        }
+        .card {
+            perspective: 1000px;
+        }
+        .card-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            backface-visibility: hidden;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+        .card-back {
+            transform: rotateY(180deg);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Loan Application Form</h1>
+    <div class="progress-bar">
+        <div id="progressBar"></div>
+    </div>
+    <div id="completionPercentage">Form Completion: 0%</div>
+    <form id="loanForm">
+        <div class="form-group">
+            <label for="term">Loan Term (years)</label>
+            <input type="number" id="term" name="term" required>
+        </div>
+        <div class="form-group">
+            <label for="amount">Loan Amount</label>
+            <input type="number" id="amount" name="amount" required>
+        </div>
+        <div class="form-group">
+            <label for="rate">Interest Rate (%)</label>
+            <input type="text" id="rate" name="rate" readonly>
+        </div>
+        <div class="form-group">
+            <label for="monthlyPayment">Monthly Payment</label>
+            <input type="text" id="monthlyPayment" name="monthlyPayment" readonly>
+        </div>
+        <div class="form-group">
+            <label for="dob">Date of Birth</label>
+            <input type="text" id="dob" name="dob" required>
+        </div>
+        <div class="form-group">
+            <label for="employmentStatus">Employment Status</label>
+            <select id="employmentStatus" name="employmentStatus" required>
+                <option value="">Select</option>
+                <option value="employed">Employed</option>
+                <option value="unemployed">Unemployed</option>
+            </select>
+        </div>
+        <div class="form-group" id="employerNameContainer">
+            <label for="employerName">Employer Name</label>
+            <input type="text" id="employerName" name="employerName">
+        </div>
+        <button type="submit">Submit</button>
+    </form>
+    <form id="additionalInfoForm">
+        <div class="form-group">
+            <label for="documents">Upload Documents</label>
+            <input type="file" id="documents" name="documents" multiple onchange="previewFiles()">
+        </div>
+        <div id="preview"></div>
+        <button type="submit">Submit Additional Info</button>
+    </form>
+    <button onclick="flipForm()">Flip Form</button>
+    <button onclick="resetForm()">Reset Form</button>
+    <button id="downloadSummary">Download Summary as PDF</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputs = document.querySelectorAll('input, select');
+        const termInput = document.getElementById('term');
+        const amountInput = document.getElementById('amount');
+        const rateInput = document.getElementById('rate');
+        const monthlyPaymentInput = document.getElementById('monthlyPayment');
+        const loanForm = document.getElementById('loanForm');
+        const additionalInfoForm = document.getElementById('additionalInfoForm');
+        const employmentStatus = document.getElementById('employmentStatus');
+        const employerNameContainer = document.getElementById('employerNameContainer');
+        const progressBar = document.getElementById('progressBar');
+
+        inputs.forEach(input => {
+            input.addEventListener('focus', focusInput);
+            input.addEventListener('blur', blurInput);
+            input.addEventListener('input', realTimeValidation);
+        });
+
+        termInput.addEventListener('input', calculateInterestRate);
+        amountInput.addEventListener('input', calculateMonthlyPayment);
+        termInput.addEventListener('input', calculateMonthlyPayment);
+        employmentStatus.addEventListener('change', toggleEmployerName);
+
+        flatpickr("#dob", {
+            dateFormat: "Y-m-d",
+        });
+
+        loanForm.addEventListener('input', updateProgress);
+        additionalInfoForm.addEventListener('input', updateProgress);
+
+        loanForm.addEventListener('submit', showConfirmationModal);
+        additionalInfoForm.addEventListener('submit', showConfirmationModal);
+
+        loadProgress();
+        toggleEmployerName();
+
+        setInterval(autoSaveProgress, 30000); // Auto-save progress every 30 seconds
+
+        function toggleEmployerName() {
+            if (employmentStatus.value === 'employed') {
+                employerNameContainer.style.display = 'block';
+                document.getElementById('employerName').required = true;
+            } else {
+                employerNameContainer.style.display = 'none';
+                document.getElementById('employerName').required = false;
+            }
+        }
+
+        function realTimeValidation(event) {
+            if (event.target.checkValidity()) {
+                event.target.style.borderColor = '#28a745';
+            } else {
+                event.target.style.borderColor = 'red';
+            }
+        }
+    });
+
+    function focusInput(event) {
+        event.target.style.borderColor = '#007BFF';
+    }
+
+    function blurInput(event) {
+        event.target.style.borderColor = '#ccc';
+    }
+
+    function flipForm() {
+        document.querySelector('.card').classList.toggle('flipped');
+        updateProgress();
+    }
+
+    function calculateInterestRate() {
+        const term = document.getElementById('term').value;
+        let rate = 0;
+
+        if (term <= 5) {
+            rate = 5;
+        } else if (term <= 10) {
+            rate = 4.5;
+        } else {
+            rate = 4;
+        }
+
+        document.getElementById('rate').value = rate + '%';
+        calculateMonthlyPayment();
+    }
+
+    function calculateMonthlyPayment() {
+        const amount = parseFloat(document.getElementById('amount').value);
+        const term = parseFloat(document.getElementById('term').value);
+        const rate = parseFloat(document.getElementById('rate').value) / 100;
+
+        if (isNaN(amount) || isNaN(term) || isNaN(rate)) {
+            document.getElementById('monthlyPayment').value = '';
+            return;
+        }
+
+        const monthlyRate = rate / 12;
+        const numberOfPayments = term * 12;
+        const monthlyPayment = (amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -numberOfPayments));
+
+        document.getElementById('monthlyPayment').value = `$${monthlyPayment.toFixed(2)}`;
+    }
+
+    function updateProgress() {
+        const loanFormFields = document.getElementById('loanForm').querySelectorAll('input, select');
+        const additionalInfoFormFields = document.getElementById('additionalInfoForm').querySelectorAll('input, select');
+        const totalFields = loanFormFields.length + additionalInfoFormFields.length;
+        let filledFields = 0;
+
+        loanFormFields.forEach(field => {
+            if (field.value) filledFields++;
+        });
+
+        additionalInfoFormFields.forEach(field => {
+            if (field.value) filledFields++;
+        });
+
+        const progress = (filledFields / totalFields) * 100;
+        progressBar.style.width = progress + '%';
+        document.getElementById('completionPercentage').textContent = `Form Completion: ${progress.toFixed(0)}%`;
+    }
+
+    function showConfirmationModal(event) {
+        event.preventDefault();
+        if (!validateForm()) {
+            alert('Please fill all required fields correctly.');
+            return;
+        }
+        saveProgress();
+        alert('Form submitted successfully!');
+        showSummary();
+    }
+
+    function validateForm() {
+        const loanFormFields = document.getElementById('loanForm').querySelectorAll('input[required], select[required]');
+        const additionalInfoFormFields = document.getElementById('additionalInfoForm').querySelectorAll('input[required], select[required]');
+        let valid = true;
+
+        loanFormFields.forEach(field => {
+            if (!field.checkValidity()) {
+                valid = false;
+                field.style.borderColor = 'red';
+            }
+        });
+
+        additionalInfoFormFields.forEach(field => {
+            if (!field.checkValidity()) {
+                valid = false;
+                field.style.borderColor = 'red';
+            }
+        });
+
+        return valid;
+    }
+
+    function saveProgress() {
+        const loanFormData = new FormData(document.getElementById('loanForm'));
+        const additionalInfoFormData = new FormData(document.getElementById('additionalInfoForm'));
+
+        localStorage.setItem('loanForm', JSON.stringify(Object.fromEntries(loanFormData)));
+        localStorage.setItem('additionalInfoForm', JSON.stringify(Object.fromEntries(additionalInfoFormData)));
+    }
+
+    function loadProgress() {
+        const loanFormData = JSON.parse(localStorage.getItem('loanForm'));
+        const additionalInfoFormData = JSON.parse(localStorage.getItem('additionalInfoForm'));
+
+        if (loanFormData) {
+            for (const key in loanFormData) {
+                if (document.getElementById(key)) {
+                    document.getElementById(key).value = loanFormData[key];
+                }
+            }
+        }
+
+        if (additionalInfoFormData) {
+            for (const key in additionalInfoFormData) {
+                if (document.getElementById(key)) {
+                    document.getElementById(key).value = additionalInfoFormData[key];
+                }
+            }
+        }
+
+        updateProgress();
+    }
+
+    function previewFiles() {
+        const preview = document.getElementById('preview');
+        const files = document.getElementById('documents').files;
+
+        preview.innerHTML = '';
+        for (const file of files) {
+            const reader = new FileReader();
+            reader.onload = (function (theFile) {
+                return function (e) {
+                    const span = document.createElement('span');
+                    span.innerHTML = `<img src="${e.target.result}" title="${theFile.name}"/>`;
+                    preview.appendChild(span);
+                };
+            })(file);
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function resetForm() {
+        document.getElementById('loanForm').reset();
+        document.getElementById('additionalInfoForm').reset();
+        updateProgress();
+        localStorage.removeItem('loanForm');
+        localStorage.removeItem('additionalInfoForm');
+        document.getElementById('preview').innerHTML = '';
+    }
+
+    function autoSaveProgress() {
+        const loanFormData = new FormData(document.getElementById('loanForm'));
+        const additionalInfoFormData = new FormData(document.getElementById('additionalInfoForm'));
+
+        localStorage.setItem('loanForm', JSON.stringify(Object.fromEntries(loanFormData)));
+        localStorage.setItem('additionalInfoForm', JSON.stringify(Object.fromEntries(additionalInfoFormData)));
+    }
+
+    function showSummary() {
+        const loanFormData = JSON.parse(localStorage.getItem('loanForm'));
+        const additionalInfoFormData = JSON.parse(localStorage.getItem('additionalInfoForm'));
+        let summary = 'Loan Application Summary:\n\n';
+
+        if (loanFormData) {
+            summary += 'Loan Form:\n';
+            for (const key in loanFormData) {
+                summary += `${key}: ${loanFormData[key]}\n`;
+            }
+        }
+
+        if (additionalInfoFormData) {
+            summary += '\nAdditional Info Form:\n';
+            for (const key in additionalInfoFormData) {
+                summary += `${key}: ${additionalInfoFormData[key]}\n`;
+            }
+        }
+
+        alert(summary);
+    }
+
+    function downloadSummary() {
+        const loanFormData = JSON.parse(localStorage.getItem('loanForm'));
+        const additionalInfoFormData = JSON.parse(localStorage.getItem('additionalInfoForm'));
+        let summary = 'Loan Application Summary:\n\n';
+
+        if (loanFormData) {
+            summary += 'Loan Form:\n';
+            for (const key in loanFormData) {
+                summary += `${key}: ${loanFormData[key]}\n`;
+            }
+        }
+
+        if (additionalInfoFormData) {
+            summary += '\nAdditional Info Form:\n';
+            for (const key in additionalInfoFormData) {
+                summary += `${key}: ${additionalInfoFormData[key]}\n`;
+            }
+        }
+
+        const element = document.createElement('a');
+        const file = new Blob([summary], { type: 'application/pdf' });
+        element.href = URL.createObjectURL(file);
+        element.download = 'Loan_Application_Summary.pdf';
+        document.body.appendChild(element); // Required for this to work in FireFox
+        element.click();
+    }
+
+    document.getElementById('downloadSummary').addEventListener('click', downloadSummary);
+</script>
+</body>
+</html>
